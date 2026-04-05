@@ -9,6 +9,7 @@ Each question is a dict with:
   - "options"  : list[str]
   - "answer"   : str
   - "category" : str
+    - "explanation" : str
 """
 
 QUESTIONS = [
@@ -24,7 +25,8 @@ QUESTIONS = [
             "D) A security tool that blocks malicious traffic"
         ],
         "answer": "B",
-        "category": "Fundamentals"
+        "category": "Fundamentals",
+        "explanation": "A protocol is a shared rulebook for communication: it defines message format, order, and what each side does when sending or receiving specific messages."
     },
     {
         "question": "What is encapsulation?",
@@ -35,7 +37,8 @@ QUESTIONS = [
             "D) Dropping packets that exceed the router queue"
         ],
         "answer": "C",
-        "category": "Fundamentals"
+        "category": "Fundamentals",
+        "explanation": "Encapsulation means each lower layer adds its own header (and sometimes trailer) as data moves down the stack, enabling addressing, reliability, and forwarding."
     },
     {
         "question": "Which switching approach reserves resources for the duration of a communication session?",
@@ -46,7 +49,8 @@ QUESTIONS = [
             "D) Best-effort forwarding"
         ],
         "answer": "B",
-        "category": "Fundamentals"
+        "category": "Fundamentals",
+        "explanation": "Circuit switching pre-allocates path resources for the whole session, unlike packet switching which shares links statistically among many flows."
     },
     {
         "question": "If a router's output queue becomes full, what is the most likely immediate result?",
@@ -57,7 +61,8 @@ QUESTIONS = [
             "D) The sender switches from TCP to UDP"
         ],
         "answer": "C",
-        "category": "Fundamentals"
+        "category": "Fundamentals",
+        "explanation": "When an output queue is full, newly arriving packets cannot be buffered and are dropped; this is a direct cause of loss under congestion."
     },
 
     # -------------------------------------------------------------------------
@@ -72,7 +77,8 @@ QUESTIONS = [
             "D) ARP"
         ],
         "answer": "B",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "HTTP is the web transfer protocol used by browsers and servers to request and deliver web resources."
     },
     {
         "question": "What is a main advantage of persistent HTTP connections over non-persistent ones?",
@@ -83,7 +89,8 @@ QUESTIONS = [
             "D) They replace DNS entirely"
         ],
         "answer": "B",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "Persistent connections reuse one TCP connection for multiple objects, reducing handshake overhead and latency compared with opening a new connection per object."
     },
     {
         "question": "What is the primary job of DNS?",
@@ -94,7 +101,8 @@ QUESTIONS = [
             "D) Reserving bandwidth for video streams"
         ],
         "answer": "A",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "DNS resolves human-readable names to resource records such as IP addresses so clients can reach hosts."
     },
     {
         "question": "Which protocol is mainly used to transfer email from a sender's mail server onward?",
@@ -105,7 +113,8 @@ QUESTIONS = [
             "D) DHCP"
         ],
         "answer": "B",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "SMTP is the server-to-server email transfer protocol used to relay outgoing mail across the Internet."
     },
     {
         "question": "What is the main role of a content distribution network (CDN)?",
@@ -116,7 +125,8 @@ QUESTIONS = [
             "D) To replace the transport layer with an application-layer protocol"
         ],
         "answer": "C",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "A CDN places cached content at geographically distributed edge servers to reduce latency and improve delivery performance for users."
     },
     {
         "question": "QUIC is most closely associated with which transport foundation?",
@@ -127,7 +137,8 @@ QUESTIONS = [
             "D) ARP"
         ],
         "answer": "A",
-        "category": "Application Layer"
+        "category": "Application Layer",
+        "explanation": "QUIC runs over UDP and implements reliability, congestion control, and security in user space, enabling faster connection setup."
     },
 
     # -------------------------------------------------------------------------
@@ -142,7 +153,8 @@ QUESTIONS = [
             "D) VLAN ID"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "Port numbers let transport protocols deliver incoming segments to the correct application process on a host."
     },
     {
         "question": "Which transport protocol provides connectionless service?",
@@ -153,7 +165,8 @@ QUESTIONS = [
             "D) HTTP/2"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "UDP is connectionless: it sends datagrams without handshake, retransmission, or in-order guarantees."
     },
     {
         "question": "Why does TCP use sequence numbers?",
@@ -164,7 +177,8 @@ QUESTIONS = [
             "D) To compress application data"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "Sequence numbers let TCP detect loss, reorder out-of-order data, and provide reliable byte-stream delivery."
     },
     {
         "question": "What problem is flow control designed to prevent?",
@@ -175,7 +189,8 @@ QUESTIONS = [
             "D) MAC address duplication on Ethernet"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "Flow control protects the receiver by limiting how much unacknowledged data a sender can have in flight."
     },
     {
         "question": "Which reliable data transfer protocol may resend a whole window after one loss?",
@@ -186,7 +201,8 @@ QUESTIONS = [
             "D) ARQ-free streaming"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "Go-Back-N retransmits from the first missing packet onward, which can cause many already-sent packets to be resent."
     },
     {
         "question": "What is the main goal of congestion control?",
@@ -197,7 +213,8 @@ QUESTIONS = [
             "D) To verify user identity at login"
         ],
         "answer": "B",
-        "category": "Transport Layer"
+        "category": "Transport Layer",
+        "explanation": "Congestion control aims to keep the network stable and efficient by reducing sending rates when paths become overloaded."
     },
 
     # -------------------------------------------------------------------------
@@ -212,7 +229,8 @@ QUESTIONS = [
             "D) Forwarding happens only in hosts, routing happens only in switches"
         ],
         "answer": "B",
-        "category": "Network Layer"
+        "category": "Network Layer",
+        "explanation": "Forwarding is the per-router data-plane action of sending a packet out an interface; routing is the control-plane computation of end-to-end paths and forwarding tables."
     },
     {
         "question": "What is the main purpose of NAT in many home networks?",
@@ -223,7 +241,8 @@ QUESTIONS = [
             "D) To authenticate users to Wi-Fi"
         ],
         "answer": "B",
-        "category": "Network Layer"
+        "category": "Network Layer",
+        "explanation": "NAT rewrites address/port mappings so many private hosts can share one or a few public IPv4 addresses."
     },
     {
         "question": "Which protocol is commonly used for routing between different autonomous systems on the Internet?",
@@ -234,7 +253,8 @@ QUESTIONS = [
             "D) Ethernet"
         ],
         "answer": "B",
-        "category": "Network Layer"
+        "category": "Network Layer",
+        "explanation": "BGP is the inter-domain routing protocol used to exchange reachability and policy between autonomous systems."
     },
     {
         "question": "Which protocol is widely used for intra-AS routing within an autonomous system?",
@@ -245,7 +265,8 @@ QUESTIONS = [
             "D) SMTP"
         ],
         "answer": "B",
-        "category": "Network Layer"
+        "category": "Network Layer",
+        "explanation": "OSPF is a link-state interior gateway protocol commonly used inside one AS to compute shortest paths."
     },
     {
         "question": "What is ICMP primarily used for?",
@@ -256,7 +277,8 @@ QUESTIONS = [
             "D) Assigning transport-layer port numbers"
         ],
         "answer": "C",
-        "category": "Network Layer"
+        "category": "Network Layer",
+        "explanation": "ICMP carries network diagnostics and error reporting messages, such as destination unreachable or time exceeded."
     },
 
     # -------------------------------------------------------------------------
@@ -271,7 +293,8 @@ QUESTIONS = [
             "D) To map a router to a subnet mask"
         ],
         "answer": "A",
-        "category": "Link Layer"
+        "category": "Link Layer",
+        "explanation": "ARP resolves a local IPv4 address to a MAC address so frames can be delivered on an Ethernet LAN."
     },
     {
         "question": "Which error-detection technique is widely used in link-layer protocols and storage systems?",
@@ -282,7 +305,8 @@ QUESTIONS = [
             "D) Sliding-window fairness"
         ],
         "answer": "B",
-        "category": "Link Layer"
+        "category": "Link Layer",
+        "explanation": "CRC provides strong error-detection capability using polynomial checks, making it widely used for frame integrity."
     },
     {
         "question": "What is a key function of an Ethernet switch?",
@@ -293,7 +317,8 @@ QUESTIONS = [
             "D) It creates TLS sessions for browsers"
         ],
         "answer": "B",
-        "category": "Link Layer"
+        "category": "Link Layer",
+        "explanation": "An Ethernet switch learns MAC-to-port mappings and forwards frames only on the appropriate outgoing port."
     },
     {
         "question": "What is the main benefit of a VLAN?",
@@ -304,7 +329,8 @@ QUESTIONS = [
             "D) It disables broadcast traffic entirely"
         ],
         "answer": "B",
-        "category": "Link Layer"
+        "category": "Link Layer",
+        "explanation": "VLANs create logical Layer 2 segments over shared switch infrastructure, improving isolation and broadcast control."
     },
 
     # -------------------------------------------------------------------------
@@ -319,7 +345,8 @@ QUESTIONS = [
             "D) 802.1Q"
         ],
         "answer": "B",
-        "category": "Wireless"
+        "category": "Wireless",
+        "explanation": "Wi-Fi is standardized in IEEE 802.11, which defines wireless LAN PHY and MAC behavior."
     },
     {
         "question": "What makes wireless channels more challenging than wired channels?",
@@ -330,7 +357,8 @@ QUESTIONS = [
             "D) Wireless hosts do not require addressing"
         ],
         "answer": "C",
-        "category": "Wireless"
+        "category": "Wireless",
+        "explanation": "Wireless links face higher attenuation, interference, and multipath fading, so signal quality varies more over time."
     },
     {
         "question": "In mobile networking, what does mobility support aim to preserve as a user changes attachment points?",
@@ -341,7 +369,8 @@ QUESTIONS = [
             "D) The exact same radio frequency in every location"
         ],
         "answer": "B",
-        "category": "Wireless"
+        "category": "Wireless",
+        "explanation": "Mobility mechanisms aim to keep sessions connected while users move between networks or access points."
     },
 
     # -------------------------------------------------------------------------
@@ -356,7 +385,8 @@ QUESTIONS = [
             "D) Digital signature verification"
         ],
         "answer": "A",
-        "category": "Security"
+        "category": "Security",
+        "explanation": "Symmetric cryptography uses one shared secret key for both encryption and decryption, making it fast for bulk data."
     },
     {
         "question": "What is the main purpose of a cryptographic hash in network security?",
@@ -367,7 +397,8 @@ QUESTIONS = [
             "D) To guarantee packet delivery"
         ],
         "answer": "B",
-        "category": "Security"
+        "category": "Security",
+        "explanation": "A cryptographic hash maps data to a fixed-size digest used to detect tampering and verify integrity."
     },
     {
         "question": "What protocol is commonly used to secure HTTP connections on the modern web?",
@@ -378,7 +409,8 @@ QUESTIONS = [
             "D) ARP"
         ],
         "answer": "B",
-        "category": "Security"
+        "category": "Security",
+        "explanation": "TLS provides confidentiality, integrity, and authentication for HTTPS traffic between client and server."
     },
     {
         "question": "What is the main role of a firewall?",
@@ -389,7 +421,8 @@ QUESTIONS = [
             "D) To generate DNS records automatically"
         ],
         "answer": "B",
-        "category": "Security"
+        "category": "Security",
+        "explanation": "A firewall enforces security policy by allowing or blocking traffic based on rule conditions such as address, port, and protocol."
     },
     {
         "question": "An intrusion detection system (IDS) is mainly used to:",
@@ -400,6 +433,7 @@ QUESTIONS = [
             "D) Replace end-point authentication"
         ],
         "answer": "A",
-        "category": "Security"
+        "category": "Security",
+        "explanation": "An IDS monitors hosts or networks to detect suspicious patterns and alert operators about potential attacks."
     }
 ]

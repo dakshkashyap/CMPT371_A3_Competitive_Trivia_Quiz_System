@@ -85,22 +85,41 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
 
     # Select TOTAL_ROUNDS unique questions from the bank (shuffled)
     selected_questions = random.sample(QUESTIONS, min(TOTAL_ROUNDS, len(QUESTIONS)))
+    remaining_questions = [q for q in QUESTIONS if q not in selected_questions]
 
     print(f"[SESSION] Game started with 2 players. {TOTAL_ROUNDS} rounds.")
 
-    # Round loop
-    for round_num, q in enumerate(selected_questions, start=1):
+    def play_round(q: dict, round_num: int, total_rounds: int, is_tiebreaker: bool = False) -> None:
+        round_label = f"TB-{round_num - TOTAL_ROUNDS}" if is_tiebreaker else str(round_num)
 
-        print(f"[SESSION] Round {round_num}: {q['question'][:50]}...")
+        reveal_msg = {
+            "type": "CATEGORY_REVEAL",
+            "category": q["category"],
+            "round": round_num,
+            "round_label": round_label,
+            "total_rounds": total_rounds,
+            "is_tiebreaker": is_tiebreaker,
+            "scores": {
+                "Player 1": scores[conn_1],
+                "Player 2": scores[conn_o],
+            },
+        }
+        send_msg(conn_1, reveal_msg)
+        send_msg(conn_o, reveal_msg)
+        time.sleep(1.0)
+
+        print(f"[SESSION] Round {round_label}: {q['question'][:50]}...")
 
         question_msg = {
             "type"        : "QUESTION",
             "round"       : round_num,
-            "total_rounds": TOTAL_ROUNDS,
+            "round_label" : round_label,
+            "total_rounds": total_rounds,
             "category"    : q["category"],
             "question"    : q["question"],
             "options"     : q["options"],
             "timeout"     : ANSWER_TIMEOUT,
+            "is_tiebreaker": is_tiebreaker,
             "scores"      : {
                 "Player 1": scores[conn_1],
                 "Player 2": scores[conn_o]
@@ -113,6 +132,7 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
         answers     = {}   # { conn : (answer_str, elapsed_seconds) }
         round_start = time.monotonic()
         lock        = threading.Lock()
+        first_submit_conn = None
 
         def collect_answer(conn: socket.socket) -> None:
             """
@@ -131,7 +151,15 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
             finally:
                 conn.settimeout(None)   # Reset to blocking mode
 
+            nonlocal first_submit_conn
             with lock:
+                if answer_val and first_submit_conn is None:
+                    first_submit_conn = conn
+                    other_conn = conn_o if conn is conn_1 else conn_1
+                    send_msg(other_conn, {
+                        "type": "OPPONENT_LOCKED",
+                        "payload": "Opponent locked in.",
+                    })
                 answers[conn] = (answer_val, elapsed)
 
         t1 = threading.Thread(target=collect_answer, args=(conn_1,), daemon=True)
@@ -166,10 +194,13 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
             result_msg = {
                 "type"          : "ROUND_RESULT",
                 "round"         : round_num,
+                "round_label"   : round_label,
                 "correct_answer": correct_key,
                 "your_answer"   : their_answer,
                 "was_correct"   : was_correct,
                 "round_winner"  : round_winner_name,
+                "explanation"   : q.get("explanation", ""),
+                "is_tiebreaker" : is_tiebreaker,
                 "scores"        : {
                     "Player 1": scores[conn_1],
                     "Player 2": scores[conn_o]
@@ -177,8 +208,26 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
             }
             send_msg(conn, result_msg)
 
-        print(f"[SESSION] Round {round_num} done. Scores — P1:{scores[conn_1]} P2:{scores[conn_o]}")
+        print(f"[SESSION] Round {round_label} done. Scores — P1:{scores[conn_1]} P2:{scores[conn_o]}")
         time.sleep(0.3)   # Brief pause between rounds
+
+    # Main rounds
+    for round_num, q in enumerate(selected_questions, start=1):
+        play_round(q=q, round_num=round_num, total_rounds=TOTAL_ROUNDS, is_tiebreaker=False)
+
+    # Sudden-death tiebreakers continue until tie is broken
+    tiebreak_count = 0
+    while scores[conn_1] == scores[conn_o]:
+        tiebreak_count += 1
+        if remaining_questions:
+            q = random.choice(remaining_questions)
+            remaining_questions.remove(q)
+        else:
+            q = random.choice(QUESTIONS)
+
+        round_num = TOTAL_ROUNDS + tiebreak_count
+        print(f"[SESSION] Tie detected. Starting sudden-death round {tiebreak_count}.")
+        play_round(q=q, round_num=round_num, total_rounds=round_num, is_tiebreaker=True)
 
     # Game-over
     s1, s2 = scores[conn_1], scores[conn_o]

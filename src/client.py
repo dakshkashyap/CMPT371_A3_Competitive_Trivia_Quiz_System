@@ -20,6 +20,11 @@ import json
 import sys
 import time
 
+try:
+    import winsound
+except ImportError:  # Non-Windows environments
+    winsound = None
+
 HOST = "127.0.0.1"
 PORT = 5050
 
@@ -81,11 +86,30 @@ def print_divider(char: str = "─", width: int = 60) -> None:
     print(f"{DIM}{char * width}{RESET}")
 
 
+def play_feedback_sound(kind: str) -> None:
+    """Play a lightweight sound cue for round outcomes."""
+    if winsound:
+        try:
+            if kind == "correct":
+                winsound.Beep(880, 120)
+                winsound.Beep(1100, 120)
+            elif kind == "wrong":
+                winsound.Beep(280, 220)
+            elif kind == "timeout":
+                winsound.Beep(440, 140)
+                winsound.Beep(300, 180)
+        except RuntimeError:
+            print("\a", end="", flush=True)
+    else:
+        print("\a", end="", flush=True)
+
+
 def display_question(msg: dict, my_role: str) -> None:
     """Pretty-print the question card with round info, scores, and options."""
     scores = msg["scores"]
+    round_text = msg.get("round_label") or f"{msg['round']}/{msg['total_rounds']}"
     print_divider()
-    print(f"{CYAN}{BOLD}  Round {msg['round']}/{msg['total_rounds']}  |  Category: {msg['category']}{RESET}")
+    print(f"{CYAN}{BOLD}  Round {round_text}  |  Category: {msg['category']}{RESET}")
     print(f"  Scores — {YELLOW}Player 1: {scores.get('Player 1', 0)}{RESET}  {MAGENTA}Player 2: {scores.get('Player 2', 0)}{RESET}")
     print_divider()
     print(f"\n{WHITE}{BOLD}  {msg['question']}{RESET}\n")
@@ -104,15 +128,19 @@ def display_round_result(msg: dict, my_role: str) -> None:
     was_correct = msg["was_correct"]
     winner      = msg["round_winner"]
     scores      = msg["scores"]
+    explanation = msg.get("explanation", "")
 
     print()
     print_divider()
     if was_correct:
         print(f"  {GREEN}{BOLD}✓ Correct!{RESET}  The answer was {GREEN}{correct}{RESET}")
-    elif your_answer is None:
+        play_feedback_sound("correct")
+    elif your_answer in (None, ""):
         print(f"  {RED}{BOLD}⏰ Time's up!{RESET}  The correct answer was {GREEN}{correct}{RESET}")
+        play_feedback_sound("timeout")
     else:
         print(f"  {RED}{BOLD}✗ Wrong!{RESET}   You answered {RED}{your_answer}{RESET}. Correct was {GREEN}{correct}{RESET}")
+        play_feedback_sound("wrong")
 
     if winner:
         print(f"  {YELLOW}🏆 {winner} earned a point this round!{RESET}")
@@ -120,8 +148,22 @@ def display_round_result(msg: dict, my_role: str) -> None:
         print(f"  {DIM}  Nobody scored this round.{RESET}")
 
     print(f"\n  Scores — {YELLOW}Player 1: {scores.get('Player 1', 0)}{RESET}  {MAGENTA}Player 2: {scores.get('Player 2', 0)}{RESET}")
+    if explanation:
+        print(f"\n  {CYAN}Why:{RESET} {explanation}")
     print_divider()
     print()
+
+
+def display_category_reveal(msg: dict) -> None:
+    """Show a category transition card before each round."""
+    scores = msg.get("scores", {})
+    round_text = msg.get("round_label") or f"{msg.get('round')}/{msg.get('total_rounds')}"
+    suffix = " (Sudden Death)" if msg.get("is_tiebreaker") else ""
+    print_divider("═")
+    print(f"{CYAN}{BOLD}  Round {round_text}{suffix}{RESET}")
+    print(f"  {YELLOW}Next category:{RESET} {WHITE}{msg.get('category', 'Unknown')}{RESET}")
+    print(f"  Scores — {YELLOW}Player 1: {scores.get('Player 1', 0)}{RESET}  {MAGENTA}Player 2: {scores.get('Player 2', 0)}{RESET}")
+    print_divider("═")
 
 
 def display_game_over(msg: dict, my_role: str) -> None:
@@ -239,6 +281,13 @@ def run_client() -> None:
                 display_question(msg, my_role)
                 answer = get_player_answer(float(msg.get("timeout", 15.0)))
                 send_msg(conn, {"type": "ANSWER", "answer": answer or ""})
+
+            elif msg_type == "CATEGORY_REVEAL":
+                display_category_reveal(msg)
+
+            elif msg_type == "OPPONENT_LOCKED":
+                print(f"\n  {YELLOW}{BOLD}⚡ Opponent locked in.{RESET}")
+                print("  Enter your answer quickly: ", end="", flush=True)
 
             elif msg_type == "ROUND_RESULT":
                 display_round_result(msg, my_role)
