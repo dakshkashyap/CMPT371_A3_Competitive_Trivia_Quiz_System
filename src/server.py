@@ -28,6 +28,8 @@ HOST           = "127.0.0.1"   # Bind to localhost
 PORT           = 5050           # Listening port
 TOTAL_ROUNDS   = 10             # Number of questions per game
 ANSWER_TIMEOUT = 15.0           # Seconds each player has to answer
+CATEGORY_REVEAL_DELAY = 1.8     # Delay before showing each round question
+ROUND_RESULT_DELAY = 2.2         # Delay before moving to next round
 
 from questions import QUESTIONS
 
@@ -106,7 +108,7 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
         }
         send_msg(conn_1, reveal_msg)
         send_msg(conn_o, reveal_msg)
-        time.sleep(1.0)
+        time.sleep(CATEGORY_REVEAL_DELAY)
 
         print(f"[SESSION] Round {round_label}: {q['question'][:50]}...")
 
@@ -209,7 +211,7 @@ def game_session(conn_1: socket.socket, conn_o: socket.socket) -> None:
             send_msg(conn, result_msg)
 
         print(f"[SESSION] Round {round_label} done. Scores — P1:{scores[conn_1]} P2:{scores[conn_o]}")
-        time.sleep(0.3)   # Brief pause between rounds
+        time.sleep(ROUND_RESULT_DELAY)   # Let players read round outcome
 
     # Main rounds
     for round_num, q in enumerate(selected_questions, start=1):

@@ -1,9 +1,3 @@
-"""
-PySide6 desktop client for the CMPT 371 trivia quiz game.
-
-This client speaks the exact same newline-delimited JSON protocol as client.py,
-so it can connect to the existing server.py with no server-side protocol changes.
-"""
 
 from __future__ import annotations
 
@@ -136,6 +130,7 @@ class TriviaClientWindow(QMainWindow):
         self._fade_anim: Optional[QPropertyAnimation] = None
         self._waiting_dot_phase = 0
         self.latest_scores = {"Player 1": 0, "Player 2": 0}
+        self.game_over_received = False
 
         self.tick_timer = QTimer(self)
         self.tick_timer.setInterval(100)
@@ -476,12 +471,14 @@ class TriviaClientWindow(QMainWindow):
         card_layout = QVBoxLayout(card)
         card_layout.setSpacing(12)
 
-        title = QLabel("Game Over")
-        title.setObjectName("title")
+        self.final_heading = QLabel("Game Over")
+        self.final_heading.setObjectName("title")
 
         self.final_result = QLabel("")
+        self.final_result.setObjectName("finalResult")
         self.final_result.setWordWrap(True)
         self.final_scores = QLabel("")
+        self.final_scores.setObjectName("scoreboard")
 
         btn_row = QHBoxLayout()
         self.play_again_btn = QPushButton("Back to Connect")
@@ -493,7 +490,7 @@ class TriviaClientWindow(QMainWindow):
         btn_row.addWidget(self.play_again_btn)
         btn_row.addWidget(self.exit_btn)
 
-        card_layout.addWidget(title)
+        card_layout.addWidget(self.final_heading)
         card_layout.addWidget(self.final_result)
         card_layout.addWidget(self.final_scores)
         card_layout.addLayout(btn_row)
@@ -608,6 +605,10 @@ class TriviaClientWindow(QMainWindow):
                 border: 1px solid #dccfbf;
                 border-radius: 10px;
                 padding: 8px;
+            }
+            QLabel#finalResult {
+                font-size: 24px;
+                font-weight: 800;
             }
             QLabel#tag {
                 color: #4d6a2e;
@@ -810,6 +811,7 @@ class TriviaClientWindow(QMainWindow):
             return
 
         self._cleanup_thread()
+        self.game_over_received = False
 
         self.net_thread = NetworkClientThread(host=host, port=port, name=name)
         self.net_thread.message_received.connect(self._on_server_message)
@@ -829,6 +831,9 @@ class TriviaClientWindow(QMainWindow):
 
     def _on_disconnected(self, reason: str) -> None:
         self.waiting_dots_timer.stop()
+        if self.game_over_received:
+            self._cleanup_thread()
+            return
         self._show_dialog("Disconnected", reason, "info")
         self.tick_timer.stop()
         self._switch_page(self.connect_page)
@@ -966,16 +971,24 @@ class TriviaClientWindow(QMainWindow):
 
     def _show_game_over(self, msg: dict) -> None:
         self.tick_timer.stop()
+        self.waiting_dots_timer.stop()
+        self.game_over_received = True
         scores = msg.get("scores", {})
         self._update_score_labels(scores)
         winner = msg.get("winner", "Tie")
 
         if winner == "Tie":
-            verdict = "Final result: Tie game."
+            self.final_heading.setText("Stalemate")
+            verdict = "Match tied after all rounds."
+            self.final_result.setStyleSheet("color: #9b6117;")
         elif winner == self.my_role:
-            verdict = "Final result: You win."
+            self.final_heading.setText("Victory")
+            verdict = "You win this match."
+            self.final_result.setStyleSheet("color: #2f6d4a;")
         else:
-            verdict = f"Final result: {winner} wins."
+            self.final_heading.setText("Defeat")
+            verdict = "You lost this match."
+            self.final_result.setStyleSheet("color: #922b21;")
 
         self.final_result.setText(verdict)
         self.final_scores.setText(
@@ -988,6 +1001,9 @@ class TriviaClientWindow(QMainWindow):
         self.waiting_dots_timer.stop()
         self._cleanup_thread()
         self.my_role = None
+        self.game_over_received = False
+        self.final_heading.setText("Game Over")
+        self.final_result.setStyleSheet("")
         self._switch_page(self.connect_page)
 
     def _cleanup_thread(self) -> None:
