@@ -318,7 +318,7 @@ class TriviaClientWindow(QMainWindow):
         self.waiting_status = QLabel("Connected. You will be matched automatically.")
         self.waiting_status.setObjectName("status")
         self.waiting_status.setAlignment(Qt.AlignCenter)
-        self.waiting_score = QLabel("Player 1: 0   |   Player 2: 0")
+        self.waiting_score = QLabel("Scores will appear after match starts")
         self.waiting_score.setObjectName("scoreboard")
         self.waiting_score.setAlignment(Qt.AlignCenter)
 
@@ -349,7 +349,7 @@ class TriviaClientWindow(QMainWindow):
         self.reveal_category.setObjectName("heroSubtitle")
         self.reveal_category.setAlignment(Qt.AlignCenter)
 
-        self.reveal_score = QLabel("Player 1: 0   |   Player 2: 0")
+        self.reveal_score = QLabel("Scores will appear after match starts")
         self.reveal_score.setObjectName("scoreboard")
         self.reveal_score.setAlignment(Qt.AlignCenter)
 
@@ -372,7 +372,7 @@ class TriviaClientWindow(QMainWindow):
         self.header_label = QLabel("Round 1/10")
         self.header_label.setObjectName("title")
 
-        self.score_label = QLabel("Player 1: 0    Player 2: 0")
+        self.score_label = QLabel("Scoreboard updates when the round starts")
         self.score_label.setObjectName("subtitle")
 
         self.category_label = QLabel("Category")
@@ -380,7 +380,7 @@ class TriviaClientWindow(QMainWindow):
 
         self.role_label = QLabel("")
         self.role_label.setObjectName("roleTag")
-        self.question_score = QLabel("Player 1: 0   |   Player 2: 0")
+        self.question_score = QLabel("Scores will appear after match starts")
         self.question_score.setObjectName("scoreboard")
 
         q_card = self._card()
@@ -863,6 +863,7 @@ class TriviaClientWindow(QMainWindow):
                 self.player_names = payload.get("player_names", self.player_names)
             else:
                 self.my_role = payload
+            self._update_score_labels(self.latest_scores)
             self.waiting_status.setText(f"Matched. You are {self._name_for(self.my_role or 'Player')}.")
             self.waiting_dots_timer.start()
             self._switch_page(self.waiting_page)
