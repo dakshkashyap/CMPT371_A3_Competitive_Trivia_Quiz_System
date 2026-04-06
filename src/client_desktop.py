@@ -923,7 +923,7 @@ class TriviaClientWindow(QMainWindow):
 
     def _on_disconnected(self, reason: str) -> None:
         self.waiting_dots_timer.stop()
-        if self.game_over_received:
+        if self.game_over_received or self.stack.currentWidget() is self.connect_page:
             self._cleanup_thread()
             return
         self._show_dialog("Disconnected", reason, "info")
