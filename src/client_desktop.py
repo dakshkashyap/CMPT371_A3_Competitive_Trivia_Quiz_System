@@ -7,10 +7,99 @@ import threading
 import time
 from typing import Optional
 
+import io
+import math
+import struct
+import wave as _wave_module
+
 try:
     import winsound
 except ImportError:  # Non-Windows environments
     winsound = None
+
+# ---------------------------------------------------------------------------
+# Sound synthesis (stdlib only – no external audio deps required)
+# ---------------------------------------------------------------------------
+_SAMPLE_RATE = 44100
+
+
+def _make_tone_samples(freqs: list, duration_ms: int, volume: float = 0.6,
+                        attack_pct: float = 0.05, decay_pct: float = 0.35) -> list:
+    """Return a list of 16-bit PCM samples for a chord with an ADSR envelope."""
+    n = int(_SAMPLE_RATE * duration_ms / 1000)
+    attack_n = max(1, int(n * attack_pct))
+    decay_n = max(1, int(n * decay_pct))
+    samples = []
+    for i in range(n):
+        if i < attack_n:
+            env = i / attack_n
+        elif i > n - decay_n:
+            env = (n - i) / decay_n
+        else:
+            env = 1.0
+        t = i / _SAMPLE_RATE
+        s = sum(math.sin(2 * math.pi * f * t) for f in freqs) / len(freqs)
+        samples.append(int(s * env * volume * 32767))
+    return samples
+
+
+def _samples_to_wav(samples: list) -> bytes:
+    buf = io.BytesIO()
+    with _wave_module.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(_SAMPLE_RATE)
+        wf.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+    return buf.getvalue()
+
+
+def _build_correct_wav() -> bytes:
+    """Three-note ascending bell ding: C5 → E5 → G5+C6 chord."""
+    gap = [0] * int(_SAMPLE_RATE * 0.025)
+    p1 = _make_tone_samples([523], 160, volume=0.55, attack_pct=0.04, decay_pct=0.50)
+    p2 = _make_tone_samples([659], 160, volume=0.55, attack_pct=0.04, decay_pct=0.50)
+    p3 = _make_tone_samples([784, 1047], 520, volume=0.65, attack_pct=0.03, decay_pct=0.70)
+    return _samples_to_wav(p1 + gap + p2 + gap + p3)
+
+
+def _build_wrong_wav() -> bytes:
+    """Descending FM 'wah' sweep from 440 Hz down to 180 Hz."""
+    n = int(_SAMPLE_RATE * 0.65)
+    samples = []
+    phase = 0.0
+    for i in range(n):
+        t = i / _SAMPLE_RATE
+        progress = i / n
+        freq = 440 * math.exp(-1.1 * progress)  # exponential descent
+        mod = math.sin(2 * math.pi * 3.5 * t)   # subtle FM modulation
+        if i < int(n * 0.04):
+            env = i / int(n * 0.04)
+        else:
+            env = 1.0 - 0.95 * (progress - 0.04) / 0.96
+        s = math.sin(2 * math.pi * freq * t + 0.8 * mod)
+        samples.append(int(s * env * 0.6 * 32767))
+    return _samples_to_wav(samples)
+
+
+def _build_timeout_wav() -> bytes:
+    """Two soft descending tones: A4 → E4."""
+    gap = [0] * int(_SAMPLE_RATE * 0.05)
+    p1 = _make_tone_samples([440], 220, volume=0.40, attack_pct=0.04, decay_pct=0.60)
+    p2 = _make_tone_samples([330], 330, volume=0.35, attack_pct=0.04, decay_pct=0.72)
+    return _samples_to_wav(p1 + gap + p2)
+
+
+# Pre-generate at import time so first playback has no delay.
+_CORRECT_WAV: bytes | None = None
+_WRONG_WAV: bytes | None = None
+_TIMEOUT_WAV: bytes | None = None
+
+try:
+    _CORRECT_WAV = _build_correct_wav()
+    _WRONG_WAV = _build_wrong_wav()
+    _TIMEOUT_WAV = _build_timeout_wav()
+except Exception:
+    pass  # Fall back to winsound.Beep / bell char if synthesis fails
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QThread, Qt, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -773,23 +862,18 @@ class TriviaClientWindow(QMainWindow):
         self.result_score.setText(f"Scoreboard - {text}")
 
     def _play_feedback_sound(self, kind: str) -> None:
-        def _emit_sound() -> None:
-            if winsound:
-                try:
-                    # Custom melodic patterns (avoid Windows error chime).
-                    if kind == "correct":
-                        pattern = [(740, 90), (880, 90), (1040, 130)]
-                    elif kind == "wrong":
-                        pattern = [(520, 90), (430, 120), (340, 160)]
-                    else:  # timeout
-                        pattern = [(660, 120), (660, 120), (420, 180)]
+        wav_map = {"correct": _CORRECT_WAV, "wrong": _WRONG_WAV, "timeout": _TIMEOUT_WAV}
+        wav_data = wav_map.get(kind)
 
-                    for freq, dur in pattern:
-                        winsound.Beep(freq, dur)
-                except RuntimeError:
-                    print("\a", end="", flush=True)
-            else:
-                print("\a", end="", flush=True)
+        def _emit_sound() -> None:
+            if winsound and wav_data:
+                try:
+                    winsound.PlaySound(wav_data, winsound.SND_MEMORY | winsound.SND_NODEFAULT)
+                    return
+                except Exception:
+                    pass
+            # Fallback: terminal bell
+            print("\a", end="", flush=True)
 
         threading.Thread(target=_emit_sound, daemon=True).start()
 
