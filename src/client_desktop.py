@@ -934,6 +934,15 @@ class TriviaClientWindow(QMainWindow):
     def _on_server_message(self, msg: dict) -> None:
         msg_type = msg.get("type")
 
+        if msg_type == "PLAYER_LEFT":
+            self._show_dialog(
+                "Opponent Disconnected",
+                msg.get("payload", "Your opponent disconnected."),
+                "error",
+            )
+            self._reset_to_connect()
+            return
+
         if msg_type == "WAITING":
             self._update_score_labels(msg.get("scores", self.latest_scores))
             self.waiting_status.setText(msg.get("payload", "Waiting for an opponent..."))

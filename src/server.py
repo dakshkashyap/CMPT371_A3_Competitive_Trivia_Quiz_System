@@ -34,13 +34,22 @@ ROUND_RESULT_DELAY = 3.2         # Delay before moving to next round
 from questions import QUESTIONS
 
 # Utility helpers
-def send_msg(conn: socket.socket, payload: dict) -> None:
+class PlayerDisconnectedError(Exception):
+    """Raised inside game_session when a player drops mid-game."""
+
+
+def send_msg(conn: socket.socket, payload: dict) -> bool:
     """
     Serialise a Python dict to a JSON string, append a newline delimiter
     (our application-layer TCP boundary marker), and transmit it.
+    Returns True on success, False if the socket is broken.
     """
     raw = json.dumps(payload) + "\n"
-    conn.sendall(raw.encode("utf-8"))
+    try:
+        conn.sendall(raw.encode("utf-8"))
+        return True
+    except OSError:
+        return False
 
 def recv_msg(conn: socket.socket, buffer: list) -> dict | None:
     """
@@ -87,6 +96,23 @@ def game_session(
     buf_o = [""]
     buffers = {conn_1: buf_1, conn_o: buf_o}
 
+    def _notify_left_and_raise(survivor: socket.socket, leaver_role: str) -> None:
+        """Tell the surviving player their opponent left, then abort the session."""
+        send_msg(survivor, {
+            "type": "PLAYER_LEFT",
+            "payload": f"{display_names[leaver_role]} disconnected.",
+        })
+        raise PlayerDisconnectedError()
+
+    def _send_both(msg: dict) -> None:
+        """Send msg to both players; notify the survivor if one is gone."""
+        ok_1 = send_msg(conn_1, msg)
+        ok_o = send_msg(conn_o, msg)
+        if not ok_1:
+            _notify_left_and_raise(conn_o, "Player 1")
+        if not ok_o:
+            _notify_left_and_raise(conn_1, "Player 2")
+
     # Welcome both players and tell them their role
     send_msg(conn_1, {
         "type": "WELCOME",
@@ -125,8 +151,7 @@ def game_session(
                 "Player 2": scores[conn_o],
             },
         }
-        send_msg(conn_1, reveal_msg)
-        send_msg(conn_o, reveal_msg)
+        _send_both(reveal_msg)
         time.sleep(CATEGORY_REVEAL_DELAY)
 
         print(f"[SESSION] Round {round_label}: {q['question'][:50]}...")
@@ -147,29 +172,36 @@ def game_session(
                 "Player 2": scores[conn_o]
             }
         }
-        send_msg(conn_1, question_msg)
-        send_msg(conn_o, question_msg)
+        _send_both(question_msg)
 
         # ── Collect answers concurrently using threads ─────────────────────────
-        answers     = {}   # { conn : (answer_str, elapsed_seconds) }
-        round_start = time.monotonic()
-        lock        = threading.Lock()
-        first_submit_conn = None
+        answers            = {}   # { conn : (answer_str, elapsed_seconds) }
+        round_start        = time.monotonic()
+        lock               = threading.Lock()
+        first_submit_conn  = None
+        disconnected_conns = set()
 
         def collect_answer(conn: socket.socket) -> None:
             """
             Worker that waits for a single ANSWER message from one client.
             If the client takes longer than ANSWER_TIMEOUT the answer is
-            recorded as None (timeout).
+            recorded as None (timeout). An abrupt disconnect is also None
+            but the conn is added to disconnected_conns for detection.
             """
+            answer_val = None
+            elapsed    = ANSWER_TIMEOUT
             conn.settimeout(ANSWER_TIMEOUT)
             try:
                 msg = recv_msg(conn, buffers[conn])
                 elapsed = time.monotonic() - round_start
-                answer_val = msg.get("answer", "").upper() if msg else None
+                if msg is None:
+                    # recv_msg returns None on clean/abrupt disconnect
+                    with lock:
+                        disconnected_conns.add(conn)
+                else:
+                    answer_val = msg.get("answer", "").upper() or None
             except (socket.timeout, OSError):
-                answer_val = None
-                elapsed    = ANSWER_TIMEOUT
+                pass   # timeout — answer_val stays None
             finally:
                 conn.settimeout(None)   # Reset to blocking mode
 
@@ -192,6 +224,12 @@ def game_session(
         t1.join(timeout=ANSWER_TIMEOUT + 1)
         t2.join(timeout=ANSWER_TIMEOUT + 1)
 
+        if disconnected_conns:
+            if conn_1 in disconnected_conns:
+                _notify_left_and_raise(conn_o, "Player 1")
+            else:
+                _notify_left_and_raise(conn_1, "Player 2")
+
         # Score resolution
         correct_key       = q["answer"].upper()
         round_winner_name = None
@@ -212,6 +250,8 @@ def game_session(
         for conn in (conn_1, conn_o):
             their_answer, _ = answers.get(conn, (None, ANSWER_TIMEOUT))
             was_correct = their_answer == correct_key
+            other_conn  = conn_o if conn is conn_1 else conn_1
+            other_role  = "Player 2" if conn is conn_1 else "Player 1"
 
             result_msg = {
                 "type"          : "ROUND_RESULT",
@@ -229,47 +269,53 @@ def game_session(
                     "Player 2": scores[conn_o]
                 }
             }
-            send_msg(conn, result_msg)
+            if not send_msg(conn, result_msg):
+                _notify_left_and_raise(other_conn, other_role)
 
         print(f"[SESSION] Round {round_label} done. Scores — P1:{scores[conn_1]} P2:{scores[conn_o]}")
         time.sleep(ROUND_RESULT_DELAY)   # Let players read round outcome
 
-    # Main rounds
-    for round_num, q in enumerate(selected_questions, start=1):
-        play_round(q=q, round_num=round_num, total_rounds=TOTAL_ROUNDS, is_tiebreaker=False)
+    try:
+        # Main rounds
+        for round_num, q in enumerate(selected_questions, start=1):
+            play_round(q=q, round_num=round_num, total_rounds=TOTAL_ROUNDS, is_tiebreaker=False)
 
-    # Sudden-death tiebreakers continue until tie is broken
-    tiebreak_count = 0
-    while scores[conn_1] == scores[conn_o]:
-        tiebreak_count += 1
-        if remaining_questions:
-            q = random.choice(remaining_questions)
-            remaining_questions.remove(q)
-        else:
-            q = random.choice(QUESTIONS)
+        # Sudden-death tiebreakers continue until tie is broken
+        tiebreak_count = 0
+        while scores[conn_1] == scores[conn_o]:
+            tiebreak_count += 1
+            if remaining_questions:
+                q = random.choice(remaining_questions)
+                remaining_questions.remove(q)
+            else:
+                q = random.choice(QUESTIONS)
 
-        round_num = TOTAL_ROUNDS + tiebreak_count
-        print(f"[SESSION] Tie detected. Starting sudden-death round {tiebreak_count}.")
-        play_round(q=q, round_num=round_num, total_rounds=round_num, is_tiebreaker=True)
+            round_num = TOTAL_ROUNDS + tiebreak_count
+            print(f"[SESSION] Tie detected. Starting sudden-death round {tiebreak_count}.")
+            play_round(q=q, round_num=round_num, total_rounds=round_num, is_tiebreaker=True)
 
-    # Game-over
-    s1, s2 = scores[conn_1], scores[conn_o]
-    if   s1 > s2: overall_winner = "Player 1"
-    elif s2 > s1: overall_winner = "Player 2"
-    else:         overall_winner = "Tie"
+        # Game-over
+        s1, s2 = scores[conn_1], scores[conn_o]
+        if   s1 > s2: overall_winner = "Player 1"
+        elif s2 > s1: overall_winner = "Player 2"
+        else:         overall_winner = "Tie"
 
-    game_over_msg = {
-        "type"  : "GAME_OVER",
-        "scores": {"Player 1": s1, "Player 2": s2},
-        "player_names": display_names,
-        "winner": overall_winner
-    }
-    send_msg(conn_1, game_over_msg)
-    send_msg(conn_o, game_over_msg)
+        game_over_msg = {
+            "type"  : "GAME_OVER",
+            "scores": {"Player 1": s1, "Player 2": s2},
+            "player_names": display_names,
+            "winner": overall_winner
+        }
+        send_msg(conn_1, game_over_msg)
+        send_msg(conn_o, game_over_msg)
+        print(f"[SESSION] Game over. Winner: {overall_winner}. Closing connections.")
 
-    print(f"[SESSION] Game over. Winner: {overall_winner}. Closing connections.")
-    conn_1.close()
-    conn_o.close()
+    except PlayerDisconnectedError:
+        print("[SESSION] A player disconnected mid-game. Ending session.")
+
+    finally:
+        conn_1.close()
+        conn_o.close()
 
 
 # Main server event loop
