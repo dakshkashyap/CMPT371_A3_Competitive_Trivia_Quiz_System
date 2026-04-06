@@ -775,33 +775,23 @@ class TriviaClientWindow(QMainWindow):
     def _play_feedback_sound(self, kind: str) -> None:
         def _emit_sound() -> None:
             if winsound:
-                # System chime fallback for machines where tone beeps are muted.
                 try:
+                    # Custom melodic patterns (avoid Windows error chime).
                     if kind == "correct":
-                        winsound.MessageBeep(getattr(winsound, "MB_ICONASTERISK", -1))
+                        pattern = [(740, 90), (880, 90), (1040, 130)]
                     elif kind == "wrong":
-                        winsound.MessageBeep(getattr(winsound, "MB_ICONHAND", -1))
-                    else:
-                        winsound.MessageBeep(getattr(winsound, "MB_ICONEXCLAMATION", -1))
-                except RuntimeError:
-                    pass
+                        pattern = [(520, 90), (430, 120), (340, 160)]
+                    else:  # timeout
+                        pattern = [(660, 120), (660, 120), (420, 180)]
 
-                try:
-                    if kind == "correct":
-                        winsound.Beep(880, 120)
-                        winsound.Beep(1100, 120)
-                    elif kind == "wrong":
-                        winsound.Beep(280, 220)
-                    elif kind == "timeout":
-                        winsound.Beep(440, 140)
-                        winsound.Beep(300, 180)
+                    for freq, dur in pattern:
+                        winsound.Beep(freq, dur)
                 except RuntimeError:
                     print("\a", end="", flush=True)
             else:
                 print("\a", end="", flush=True)
 
         threading.Thread(target=_emit_sound, daemon=True).start()
-        QApplication.beep()
 
     def _show_category_reveal(self, msg: dict) -> None:
         self.player_names = msg.get("player_names", self.player_names)

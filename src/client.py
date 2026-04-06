@@ -100,28 +100,19 @@ def _score_line(scores: dict, player_names: dict) -> str:
 
 
 def play_feedback_sound(kind: str) -> None:
-    """Play a lightweight sound cue for round outcomes."""
+    """Play custom tone cues for round outcomes (no Windows error chime)."""
     if winsound:
-        # Try the Windows system event chime first (works even if Beep is muted).
         try:
+            # Short melodic patterns so each outcome is distinct.
             if kind == "correct":
-                winsound.MessageBeep(getattr(winsound, "MB_ICONASTERISK", -1))
+                pattern = [(740, 90), (880, 90), (1040, 130)]
             elif kind == "wrong":
-                winsound.MessageBeep(getattr(winsound, "MB_ICONHAND", -1))
-            else:
-                winsound.MessageBeep(getattr(winsound, "MB_ICONEXCLAMATION", -1))
-        except RuntimeError:
-            pass
+                pattern = [(520, 90), (430, 120), (340, 160)]
+            else:  # timeout
+                pattern = [(660, 120), (660, 120), (420, 180)]
 
-        try:
-            if kind == "correct":
-                winsound.Beep(880, 120)
-                winsound.Beep(1100, 120)
-            elif kind == "wrong":
-                winsound.Beep(280, 220)
-            elif kind == "timeout":
-                winsound.Beep(440, 140)
-                winsound.Beep(300, 180)
+            for freq, dur in pattern:
+                winsound.Beep(freq, dur)
         except RuntimeError:
             print("\a", end="", flush=True)
     else:
