@@ -20,15 +20,20 @@ import json
 import sys
 import time
 
+# Try to load winsound for audio feedback. If the user is on Mac/Linux, 
+# this fails gracefully and we fall back to standard terminal bells.
 try:
     import winsound
 except ImportError:  # Non-Windows environments
     winsound = None
 
+# Network configuration
 HOST = "127.0.0.1"
 PORT = 5050
 
 # ANSI colour codes
+# These are special string sequences that terminals interpret as formatting commands
+# rather than printable text. They allow our CLI to have colors and bold text.
 RESET   = "\033[0m"
 BOLD    = "\033[1m"
 GREEN   = "\033[92m"
@@ -42,7 +47,9 @@ DIM     = "\033[2m"
 
 def send_msg(conn: socket.socket, payload: dict) -> None:
     """Serialise payload to JSON, append the \\n delimiter, and send."""
+    # Convert the Python dictionary to a JSON string and add our newline boundary
     raw = json.dumps(payload) + "\n"
+    # sendall guarantees that every byte is pushed to the server
     conn.sendall(raw.encode("utf-8"))
 
 
@@ -52,15 +59,21 @@ def recv_msg(conn: socket.socket, buffer: list) -> dict | None:
     """
     Read from the socket into a persistent buffer list.
     Returns the next complete JSON object (delimited by \\n) or None on error.
+    
+    Why a buffer list? TCP streams can chunk or merge data. By keeping a buffer, 
+    we ensure we only process complete messages ending in '\n'.
     """
     while "\n" not in buffer[0]:
         try:
             chunk = conn.recv(4096).decode("utf-8")
-            if not chunk:
+            if not chunk: # Empty chunk means the server closed the connection
                 return None
             buffer[0] += chunk
         except (OSError, ConnectionResetError):
-            return None
+            return None # The connection was forcibly closed or dropped
+            
+    # Partition splits the string into 3 parts: before \n, the \n itself, and after \n.
+    # The 'after' part stays in the buffer for the next time this function is called.
     raw_msg, _, buffer[0] = buffer[0].partition("\n")
     try:
         return json.loads(raw_msg)
@@ -89,9 +102,11 @@ def print_divider(char: str = "─", width: int = 60) -> None:
     print(f"{DIM}{char * width}{RESET}")
 
 def _name_for(role: str, player_names: dict) -> str:
+    """Helper to get the actual display name for 'Player 1' or 'Player 2'."""
     return player_names.get(role, role)
 
 def _score_line(scores: dict, player_names: dict) -> str:
+    """Helper to format the scoreboard neatly."""
     p1 = _name_for("Player 1", player_names)
     p2 = _name_for("Player 2", player_names)
     return (
@@ -116,6 +131,7 @@ def play_feedback_sound(kind: str) -> None:
         except RuntimeError:
             print("\a", end="", flush=True)
     else:
+        # Fallback for Mac/Linux users to just use the standard terminal beep
         print("\a", end="", flush=True)
 
 def display_question(msg: dict, my_role: str, player_names: dict) -> None:
@@ -208,6 +224,9 @@ class CountdownTimer(threading.Thread):
     """
     Background thread that prints remaining time every second.
     Sets self.timed_out = True when it reaches 0.
+    
+    Why a thread? We need the timer to update visually on the screen while simultaneously
+    waiting for the user to type their answer (which blocks the main thread).
     """
     def __init__(self, duration: float) -> None:
         super().__init__(daemon=True)
@@ -218,10 +237,12 @@ class CountdownTimer(threading.Thread):
     def run(self) -> None:
         remaining = int(self.duration)
         while remaining > 0 and not self._cancelled.is_set():
+            # \r moves the cursor back to the start of the line so we overwrite the previous time
             print(f"\r  {YELLOW}⏱  {remaining:2d}s remaining{RESET}  Enter answer: ", end="", flush=True)
             self._cancelled.wait(timeout=1)
             remaining -= 1
         if not self._cancelled.is_set():
+            # Pad with spaces to overwrite the text fully
             print(f"\r  {RED}⏰ Time's up!{RESET}                           ")
             self.timed_out = True
 
@@ -238,6 +259,7 @@ def get_player_answer(timeout: float) -> str | None:
     timer.start()
     answer = None
     try:
+        # sys.stdin.readline is used instead of input() because it handles background interrupts better
         raw = sys.stdin.readline().strip().upper()
         if raw in ("A", "B", "C", "D"):
             answer = raw
@@ -254,13 +276,14 @@ def get_player_answer(timeout: float) -> str | None:
 def run_client() -> None:
     """
     Connects to the server, handles all protocol messages, and drives
-    the CLI game loop.
+    the CLI game loop. This is the main orchestrator.
     """
     print_banner()
     name = input(f"  {CYAN}Enter your name{RESET}: ").strip() or "Anonymous"
     print(f"\n  {DIM}Connecting to {HOST}:{PORT}...{RESET}")
 
     try:
+        # Create an IPv4 TCP socket and attempt connection
         conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         conn.connect((HOST, PORT))
     except ConnectionRefusedError:
@@ -271,10 +294,13 @@ def run_client() -> None:
     buf     = [""]
     my_role = None
     player_names = {"Player 1": "Player 1", "Player 2": "Player 2"}
+    
+    # Handshake Phase: Send our identity to the server to join the matchmaking queue
     send_msg(conn, {"type": "CONNECT", "name": name})
 
     try:
         while True:
+            # Block and wait for a message from the server
             msg = recv_msg(conn, buf)
             if msg is None:
                 print(f"\n  {DIM}Server disconnected. Goodbye!{RESET}")
@@ -282,6 +308,7 @@ def run_client() -> None:
 
             msg_type = msg.get("type")
 
+            # Route the server's message to the correct UI display logic based on 'type'
             if msg_type == "WAITING":
                 print(f"  {YELLOW}⏳ {msg.get('payload', 'Waiting...')}{RESET}")
 
@@ -299,7 +326,10 @@ def run_client() -> None:
             elif msg_type == "QUESTION":
                 player_names = msg.get("player_names", player_names)
                 display_question(msg, my_role, player_names)
+                
+                # Halt client and wait for user input (or timeout)
                 answer = get_player_answer(float(msg.get("timeout", 15.0)))
+                # Send the response back to the server
                 send_msg(conn, {"type": "ANSWER", "answer": answer or ""})
 
             elif msg_type == "CATEGORY_REVEAL":
@@ -307,6 +337,7 @@ def run_client() -> None:
                 display_category_reveal(msg, player_names)
 
             elif msg_type == "OPPONENT_LOCKED":
+                # Psychological pressure feature: Notify if the opponent answered first
                 print(f"\n  {YELLOW}{BOLD}⚡ Opponent locked in.{RESET}")
                 print("  Enter your answer quickly: ", end="", flush=True)
 

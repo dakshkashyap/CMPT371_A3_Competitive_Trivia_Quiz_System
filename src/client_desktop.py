@@ -33,6 +33,8 @@ except ImportError:  # Non-Windows environments
 # ---------------------------------------------------------------------------
 # Sound synthesis (stdlib only – no external audio deps required)
 # ---------------------------------------------------------------------------
+# We generate the sound waves mathematically so we don't have to require 
+# the user to download separate .wav files, keeping our project completely self-contained.
 _SAMPLE_RATE = 44100
 
 
@@ -57,6 +59,7 @@ def _make_tone_samples(freqs: list, duration_ms: int, volume: float = 0.6,
 
 
 def _samples_to_wav(samples: list) -> bytes:
+    """Converts raw mathematical audio samples into a standard .wav byte format."""
     buf = io.BytesIO()
     with _wave_module.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -67,7 +70,7 @@ def _samples_to_wav(samples: list) -> bytes:
 
 
 def _build_correct_wav() -> bytes:
-    """Three-note ascending bell ding: C5 → E5 → G5+C6 chord."""
+    """Three-note ascending bell ding: C5 → E5 → G5+C6 chord. (Happy Sound)"""
     gap = [0] * int(_SAMPLE_RATE * 0.025)
     p1 = _make_tone_samples([523], 160, volume=0.55, attack_pct=0.04, decay_pct=0.50)
     p2 = _make_tone_samples([659], 160, volume=0.55, attack_pct=0.04, decay_pct=0.50)
@@ -76,7 +79,7 @@ def _build_correct_wav() -> bytes:
 
 
 def _build_wrong_wav() -> bytes:
-    """Descending FM 'wah' sweep from 440 Hz down to 180 Hz."""
+    """Descending FM 'wah' sweep from 440 Hz down to 180 Hz. (Sad Sound)"""
     n = int(_SAMPLE_RATE * 0.65)
     samples = []
     phase = 0.0
@@ -95,7 +98,7 @@ def _build_wrong_wav() -> bytes:
 
 
 def _build_timeout_wav() -> bytes:
-    """Two soft descending tones: A4 → E4."""
+    """Two soft descending tones: A4 → E4. (Timeout Sound)"""
     gap = [0] * int(_SAMPLE_RATE * 0.05)
     p1 = _make_tone_samples([440], 220, volume=0.40, attack_pct=0.04, decay_pct=0.60)
     p2 = _make_tone_samples([330], 330, volume=0.35, attack_pct=0.04, decay_pct=0.72)
@@ -140,6 +143,16 @@ DEFAULT_PORT = 5050
 
 
 class NetworkClientThread(QThread):
+    """
+    GUI Networking Concept: 
+    In PySide6 (and most UI frameworks), the graphical interface runs on the 'Main Thread'.
+    If we put our socket blocking code (like `conn.recv()`) on the Main Thread, the entire 
+    window would freeze and say "Not Responding" while waiting for the server. 
+    
+    By moving the network code to this QThread, the background thread waits for the server,
+    and when a message arrives, it 'emits a signal' to safely tell the main GUI to update its visuals.
+    """
+    # Signals are safe ways for background threads to talk to the UI thread
     message_received = Signal(dict)
     connection_failed = Signal(str)
     disconnected = Signal(str)
@@ -151,17 +164,18 @@ class NetworkClientThread(QThread):
         self.name = name
         self._conn: Optional[socket.socket] = None
         self._buffer = ""
-        self._send_lock = threading.Lock()
+        self._send_lock = threading.Lock() # Prevents threading conflicts if trying to send data rapidly
 
     def run(self) -> None:
         try:
             conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            conn.settimeout(5.0)
+            conn.settimeout(5.0) # Short timeout for the initial connection attempt
             conn.connect((self.host, self.port))
-            conn.settimeout(None)
+            conn.settimeout(None) # Reset back to blocking mode for the actual game
             self._conn = conn
             self.send_payload({"type": "CONNECT", "name": self.name})
         except OSError as exc:
+            # Emit signal to show an error popup in the GUI
             self.connection_failed.emit(f"Could not connect to {self.host}:{self.port} ({exc})")
             return
 
@@ -171,9 +185,11 @@ class NetworkClientThread(QThread):
                 if not self.isInterruptionRequested():
                     self.disconnected.emit("Server disconnected.")
                 return
+            # Emit signal to pass the parsed JSON dictionary safely to the UI thread
             self.message_received.emit(msg)
 
     def _recv_message(self) -> Optional[dict]:
+        """Reads from the TCP stream and splits by \\n, same logic as CLI."""
         if self._conn is None:
             return None
 
@@ -193,6 +209,7 @@ class NetworkClientThread(QThread):
             return None
 
     def send_payload(self, payload: dict) -> bool:
+        """Serializes and sends data to the server, protecting the socket with a lock."""
         if self._conn is None:
             return False
         raw = json.dumps(payload) + "\n"
@@ -205,6 +222,7 @@ class NetworkClientThread(QThread):
             return False
 
     def close(self) -> None:
+        """Gracefully shuts down the background network thread."""
         self.requestInterruption()
         try:
             if self._conn:
@@ -219,11 +237,14 @@ class NetworkClientThread(QThread):
 
 
 class TriviaClientWindow(QMainWindow):
+    """The main application window that manages everything the user sees."""
+    
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("CMPT 371 Trivia Quiz")
         self.resize(980, 680)
 
+        # Application state variables
         self.net_thread: Optional[NetworkClientThread] = None
         self.my_role: Optional[str] = None
         self.current_timeout = 0.0
@@ -235,8 +256,10 @@ class TriviaClientWindow(QMainWindow):
         self.player_names = {"Player 1": "Player 1", "Player 2": "Player 2"}
         self.game_over_received = False
 
+        # GUI Timers: These run repeatedly on the main thread to update visual elements
+        # like the progress bar shrinking or the "..." animation during matchmaking.
         self.tick_timer = QTimer(self)
-        self.tick_timer.setInterval(100)
+        self.tick_timer.setInterval(100) # Updates 10 times a second for smooth progress bars
         self.tick_timer.timeout.connect(self._update_countdown)
 
         self.waiting_dots_timer = QTimer(self)
@@ -247,9 +270,12 @@ class TriviaClientWindow(QMainWindow):
         self.lock_notice_timer.setSingleShot(True)
         self.lock_notice_timer.timeout.connect(lambda: self.locked_notice.setText(""))
 
+        # QStackedWidget acts like a deck of cards. We build all our screens (pages)
+        # once, add them to the stack, and then just switch which one is currently visible.
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
+        # Build all the individual screens
         self.connect_page = self._build_connect_page()
         self.waiting_page = self._build_waiting_page()
         self.reveal_page = self._build_reveal_page()
@@ -267,6 +293,7 @@ class TriviaClientWindow(QMainWindow):
         self._apply_styles()
 
     def _show_dialog(self, title: str, text: str, level: str = "info") -> None:
+        """Helper to show a popup message box (e.g. for errors or disconnects)."""
         dialog = QMessageBox(self)
         dialog.setWindowTitle(title)
         dialog.setText(text)
@@ -304,10 +331,14 @@ class TriviaClientWindow(QMainWindow):
         dialog.exec()
 
     def _card(self) -> QFrame:
+        """Helper to generate a styled container card."""
         card = QFrame()
         card.setObjectName("card")
         return card
 
+    # -----------------------------------------------------------------------
+    # GUI Layout Builders (Creating the visual structure of each page)
+    # -----------------------------------------------------------------------
     def _build_connect_page(self) -> QWidget:
         page = QWidget()
         page.setObjectName("page")
@@ -497,6 +528,7 @@ class TriviaClientWindow(QMainWindow):
         for letter in ("A", "B", "C", "D"):
             btn = QPushButton(f"{letter})")
             btn.setProperty("answerButton", True)
+            # lambda captures the specific letter for each button connection
             btn.clicked.connect(lambda _checked=False, l=letter: self._submit_answer(l))
             self.answer_buttons.append(btn)
             answers_layout.addWidget(btn)
@@ -599,6 +631,7 @@ class TriviaClientWindow(QMainWindow):
         return page
 
     def _apply_styles(self) -> None:
+        """Injects CSS-like styling (QSS) into the PySide6 widgets."""
         self.setStyleSheet(
             """
             QWidget {
@@ -804,6 +837,7 @@ class TriviaClientWindow(QMainWindow):
         )
 
     def _switch_page(self, page: QWidget) -> None:
+        """Switches the visible card in the QStackedWidget and applies a fade-in effect."""
         self.stack.setCurrentWidget(page)
         effect = QGraphicsOpacityEffect(page)
         page.setGraphicsEffect(effect)
@@ -822,12 +856,14 @@ class TriviaClientWindow(QMainWindow):
         anim.start()
 
     def _tick_waiting_message(self) -> None:
+        """Updates the '...' loading text animation."""
         self._waiting_dot_phase = (self._waiting_dot_phase + 1) % 4
         dots = "." * self._waiting_dot_phase
         role = self.my_role or "matchmaking queue"
         self.waiting_status.setText(f"Waiting for an opponent{dots}  |  {role}")
 
     def _set_timer_visual(self, remaining: float) -> None:
+        """Changes the countdown bar color from green -> orange -> red as time runs out."""
         ratio = 0.0 if self.current_timeout <= 0 else remaining / self.current_timeout
         if ratio > 0.55:
             color = "#4c956c"
@@ -856,14 +892,17 @@ class TriviaClientWindow(QMainWindow):
         )
 
     def _format_scores(self, scores: dict) -> str:
+        """Helper to format the scoreboard neatly."""
         p1 = self.player_names.get("Player 1", "Player 1")
         p2 = self.player_names.get("Player 2", "Player 2")
         return f"{p1}: {scores.get('Player 1', 0)}   |   {p2}: {scores.get('Player 2', 0)}"
 
     def _name_for(self, role: str) -> str:
+        """Returns the actual user-chosen name instead of 'Player 1'."""
         return self.player_names.get(role, role)
 
     def _update_score_labels(self, scores: dict) -> None:
+        """Updates the scoreboard text across all different pages of the app."""
         self.latest_scores = {
             "Player 1": scores.get("Player 1", 0),
             "Player 2": scores.get("Player 2", 0),
@@ -875,6 +914,7 @@ class TriviaClientWindow(QMainWindow):
         self.result_score.setText(f"Scoreboard - {text}")
 
     def _play_feedback_sound(self, kind: str) -> None:
+        """Plays the synthesized audio in a detached thread so it doesn't freeze the GUI."""
         wav_map = {"correct": _CORRECT_WAV, "wrong": _WRONG_WAV, "timeout": _TIMEOUT_WAV}
         wav_data = wav_map.get(kind)
 
@@ -890,6 +930,10 @@ class TriviaClientWindow(QMainWindow):
 
         threading.Thread(target=_emit_sound, daemon=True).start()
 
+    # -----------------------------------------------------------------------
+    # Message Routing (Handling instructions from the Server)
+    # -----------------------------------------------------------------------
+
     def _show_category_reveal(self, msg: dict) -> None:
         self.player_names = msg.get("player_names", self.player_names)
         scores = msg.get("scores", self.latest_scores)
@@ -901,10 +945,12 @@ class TriviaClientWindow(QMainWindow):
         self._switch_page(self.reveal_page)
 
     def _show_opponent_locked(self, payload: str) -> None:
+        """Temporarily displays 'Opponent locked in.' to apply competitive pressure."""
         self.locked_notice.setText(payload or "Opponent locked in.")
         self.lock_notice_timer.start(1400)
 
     def _on_connect_clicked(self) -> None:
+        """Triggered when the user clicks 'Connect' on the home page."""
         name = self.name_input.text().strip() or "Anonymous"
         host = self.host_input.text().strip() or DEFAULT_HOST
         port_text = self.port_input.text().strip()
@@ -918,6 +964,7 @@ class TriviaClientWindow(QMainWindow):
         self._cleanup_thread()
         self.game_over_received = False
 
+        # Spawn the background network thread and link its signals to our functions
         self.net_thread = NetworkClientThread(host=host, port=port, name=name)
         self.net_thread.message_received.connect(self._on_server_message)
         self.net_thread.connection_failed.connect(self._on_connection_failed)
@@ -935,6 +982,7 @@ class TriviaClientWindow(QMainWindow):
         self._cleanup_thread()
 
     def _on_disconnected(self, reason: str) -> None:
+        """Handles mid-game drops or server shutdowns gracefully."""
         self.waiting_dots_timer.stop()
         if self.game_over_received or self.stack.currentWidget() is self.connect_page:
             self._cleanup_thread()
@@ -945,6 +993,7 @@ class TriviaClientWindow(QMainWindow):
         self._cleanup_thread()
 
     def _on_server_message(self, msg: dict) -> None:
+        """Master router for taking JSON from the server and updating the UI."""
         msg_type = msg.get("type")
 
         if msg_type == "PLAYER_LEFT":
@@ -998,6 +1047,7 @@ class TriviaClientWindow(QMainWindow):
             return
 
     def _show_question(self, msg: dict) -> None:
+        """Sets up the Question view, enables the buttons, and starts the timer."""
         self.player_names = msg.get("player_names", self.player_names)
         scores = msg.get("scores", {})
         self._update_score_labels(scores)
@@ -1024,23 +1074,25 @@ class TriviaClientWindow(QMainWindow):
         self.question_hint.setText("Choose one option. Your first selection is final.")
         self.locked_notice.setText("")
 
-        self.tick_timer.start()
+        self.tick_timer.start() # Start shrinking the progress bar
         self.waiting_dots_timer.stop()
         self._switch_page(self.question_page)
 
     def _submit_answer(self, letter: str) -> None:
+        """Locks the UI when the user clicks an answer, sending it to the server."""
         if self.answer_submitted:
             return
         self.answer_submitted = True
 
         self.question_hint.setText(f"Submitted: {letter}. Waiting for round result...")
         for btn in self.answer_buttons:
-            btn.setEnabled(False)
+            btn.setEnabled(False) # Disable all buttons so they can't change their answer
 
         if self.net_thread:
             self.net_thread.send_payload({"type": "ANSWER", "answer": letter})
 
     def _update_countdown(self) -> None:
+        """Called every 100ms to update the countdown bar."""
         if self.answer_submitted:
             return
 
@@ -1055,9 +1107,11 @@ class TriviaClientWindow(QMainWindow):
             for btn in self.answer_buttons:
                 btn.setEnabled(False)
             if self.net_thread:
+                # Send a blank answer to let the server know we timed out
                 self.net_thread.send_payload({"type": "ANSWER", "answer": ""})
 
     def _show_round_result(self, msg: dict) -> None:
+        """Parses the round result and plays the appropriate sound effect."""
         self.tick_timer.stop()
         self.player_names = msg.get("player_names", self.player_names)
 
@@ -1089,6 +1143,7 @@ class TriviaClientWindow(QMainWindow):
         self._switch_page(self.result_page)
 
     def _show_game_over(self, msg: dict) -> None:
+        """Displays the final victory/defeat screen."""
         self.tick_timer.stop()
         self.waiting_dots_timer.stop()
         self.game_over_received = True
@@ -1118,6 +1173,7 @@ class TriviaClientWindow(QMainWindow):
         self._switch_page(self.game_over_page)
 
     def _reset_to_connect(self) -> None:
+        """Cleans up the network connection and returns the user to the home screen."""
         self.tick_timer.stop()
         self.waiting_dots_timer.stop()
         self._cleanup_thread()
@@ -1129,6 +1185,7 @@ class TriviaClientWindow(QMainWindow):
         self._switch_page(self.connect_page)
 
     def _cleanup_thread(self) -> None:
+        """Helper to ensure the background network thread is properly destroyed."""
         if self.net_thread is None:
             return
         self.net_thread.close()
@@ -1136,18 +1193,23 @@ class TriviaClientWindow(QMainWindow):
         self.net_thread = None
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
+        """Called automatically by PySide6 when the user clicks the 'X' to close the window."""
         self._cleanup_thread()
         super().closeEvent(event)
 
 
 def main() -> None:
+    """Entry point for the GUI application."""
+    # Initialize the PySide6 application engine
     app = QApplication([])
     app.setApplicationName("CMPT 371 Trivia Quiz")
     app.setFont(QFont("Trebuchet MS", 10))
 
+    # Create and display our main window
     window = TriviaClientWindow()
     window.show()
 
+    # Start the event loop (this blocks forever until the window is closed)
     app.exec()
 
 
