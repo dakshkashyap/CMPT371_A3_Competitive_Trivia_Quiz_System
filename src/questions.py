@@ -1,15 +1,17 @@
 """
-questions.py
-------------
-Original networking quiz bank inspired by the topic coverage of
-Computer Networking: A Top-Down Approach, 9th edition.
+Question bank: 20+ trivia questions on networking across 7 categories used by server.py (with the help of ChatGPT)
+Adapted and inspired by the topic coverage from course textbook -
+Computer Networking: A Top-Down Approach, 9th edition (2025)
+Author: Kurose, J. F. & Ross, K. W.
+Publisher: Pearson
+ISBN: 9780135415603
 
 Each question is a dict with:
   - "question" : str
   - "options"  : list[str]
   - "answer"   : str
   - "category" : str
-    - "explanation" : str
+  - "explanation" : str
 """
 
 QUESTIONS = [
