@@ -18,15 +18,15 @@
 This project is a **real-time, competitive Trivia Quiz system** built using Python's Socket API over TCP.  
 Two players connect to a central server and compete head-to-head by answering the same multiple-choice trivia questions simultaneously.
 
-We initially built a CLI client (`client.py`) as our working prototype, then iterated to a full desktop GUI client (`client_desktop.py`) — both are fully functional and connect to the same server.
+We initially built a CLI client (`client.py`) as our working prototype, then iterated to a full desktop GUI client (`client_desktop.py`) - both are fully functional and connect to the same server.
 
 **Key features:**
 - JSON-style question bank of 20+ networking questions across 7 categories: Fundamentals, Application Layer, Transport Layer, Network Layer, Link Layer, Wireless and Security, adapted from our course textbook, Computer Networking: A Top-Down Approach, 9th edition (compiled with the help of ChatGPT).
 - Server-enforced 15-second answer timer per round (10 questions per game)
-- First correct answer wins the round point — simultaneous competition
+- First correct answer wins the round point - simultaneous competition
 - Sudden-death tiebreaker rounds if scores are tied after 10 rounds
-- **Desktop GUI client** (`client_desktop.py`) built with PySide6 — animated pages, live countdown progress bar, scoreboard, and audio feedback (correct/wrong/timeout sounds)
-- **CLI client** (`client.py`) — terminal fallback with ANSI colour and live countdown
+- **Desktop GUI client** (`client_desktop.py`) built with PySide6 - animated pages, live countdown progress bar, scoreboard, and audio feedback (correct/wrong/timeout sounds)
+- **CLI client** (`client.py`) - terminal fallback with ANSI colour and live countdown
 - Fully concurrent: multiple separate games can run at the same time
 - Graceful mid-game disconnect handling: the surviving player sees a popup and is returned to the main screen
 
@@ -44,7 +44,7 @@ As required by the project specifications, we have identified and handled (or ex
   *Solution:* Python's `threading` module is used. When two clients are matched, they are spawned into an isolated `game_session` daemon thread. The main server listener loop is never blocked, allowing more pairs to queue simultaneously.
 
 - **TCP Stream Buffering:**  
-  *Solution:* TCP is a byte stream — multiple JSON messages can arrive concatenated. We implement an application-layer boundary by appending `\n` to every JSON payload. The `recv_msg()` function maintains a per-connection string buffer and only returns complete messages, splitting on `\n`.
+  *Solution:* TCP is a byte stream - multiple JSON messages can arrive concatenated. We implement an application-layer boundary by appending `\n` to every JSON payload. The `recv_msg()` function maintains a per-connection string buffer and only returns complete messages, splitting on `\n`.
 
 - **Answer Timeout Enforcement:**  
   *Solution:* The server sets `conn.settimeout(ANSWER_TIMEOUT)` before blocking on `recv()`. If a client does not respond in time, a `socket.timeout` exception is caught and their answer is recorded as `None` (no score). The GUI client displays a live countdown progress bar and stops accepting input when the timer fires.
@@ -71,8 +71,8 @@ As required by the project specifications, we have identified and handled (or ex
 
 To run this project you need:
 - **Python 3.10** or higher
-- **PySide6** — required for the desktop GUI client (`client_desktop.py`); installed via `requirements.txt` in Step 2
-- The CLI client (`client.py`) has no external dependencies — all modules used (`socket`, `threading`, `json`, `sys`, `time`, `random`) are part of the Python Standard Library
+- **PySide6** - required for the desktop GUI client (`client_desktop.py`); installed via `requirements.txt` in Step 2
+- The CLI client (`client.py`) has no external dependencies - all modules used (`socket`, `threading`, `json`, `sys`, `time`, `random`) are part of the Python Standard Library
 - A terminal that supports **ANSI escape codes** for the CLI client (macOS Terminal, Linux bash, Windows Terminal, VS Code terminal)
 
 ## 5. Step-by-Step Run Guide
@@ -116,7 +116,7 @@ Leave this terminal running throughout the game.
 
 ### Step 4 - Launch the clients
 
-**Option A — Desktop GUI client (recommended)**
+**Option A - Desktop GUI client (recommended)**
 
 Open **two separate terminals** (both inside the `src/` directory) and run in each:
 
@@ -126,9 +126,9 @@ python client_desktop.py
 
 Enter a name and server address (`127.0.0.1`) in the connection screen, then click **Connect**. The second player connecting will trigger the match to start automatically.
 
-> **Audio note:** Sound feedback (correct/wrong/timeout tones) is Windows-only. On macOS and Linux the sounds are silently skipped — this is expected.  <!-- FIXED: added audio note for grader -->
+> **Audio note:** Sound feedback (correct/wrong/timeout tones) is Windows-only. On macOS and Linux the sounds are silently skipped - this is expected.  <!-- FIXED: added audio note for grader -->
 
-**Option B — CLI client (alternative / no dependencies)**
+**Option B - CLI client (alternative / no dependencies)**
 
 Open **two separate terminals** and run in each:
 
@@ -147,7 +147,7 @@ Both clients will now simultaneously receive and display trivia questions.
 
 - Each player sees the **same question** with 4 options (A / B / C / D)
 - In the GUI client, click an answer button; in the CLI client, type the letter and press **Enter**
-- You have **15 seconds** — a live countdown is shown
+- You have **15 seconds** - a live countdown is shown
 - If scores are tied after 10 rounds, sudden-death tiebreaker rounds continue until the tie is broken
 - After each round, both clients display the correct answer, whether you were right, and updated scores
 - After the final round the scoreboard and winner are shown; the GUI returns you to the connect screen automatically
