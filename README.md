@@ -10,7 +10,7 @@
 | Name | Student ID | Email |
 |:-----|:-----------|:------|
 | Daksh Kashyap | 301467170 | dka147@sfu.ca |
-| Gurtaj Sangha | 301563146 | teammate@student.university.edu |
+| Gurtaj Sangha | 301563146 | gsa154@sfu.ca |
 
 
 ## 1. Project Overview & Description
